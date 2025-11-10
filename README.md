@@ -13,19 +13,19 @@ Repo: https://github.com/pinax-network/token-api
 Install using uv (recommended):
 
 ```bash
-uv pip install git+https://github.com/your-org/mcp-token-api-rest.git
+uv pip install git+https://github.com/pinax-network/mcp-token-api-rest.git
 ```
 
 Or with pip:
 
 ```bash
-pip install git+https://github.com/your-org/mcp-token-api-rest.git
+pip install git+https://github.com/pinax-network/mcp-token-api-rest.git
 ```
 
 For development, clone the repository and install in editable mode:
 
 ```bash
-git clone https://github.com/your-org/mcp-token-api-rest.git
+git clone https://github.com/pinax-network/mcp-token-api-rest.git
 cd mcp-token-api-rest
 uv pip install -e .
 ```

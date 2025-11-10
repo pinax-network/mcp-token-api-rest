@@ -10,12 +10,16 @@ import sys
 
 import httpx
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+
+from utils import patch_openapi_spec_for_keywords
 
 # Configuration
 API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
 OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{API_BASE_URL}/openapi")
 VERSION_URL = f"{API_BASE_URL}/v1/version"
-TOKEN_API_KEY = os.getenv("TOKEN_API_KEY", "")
+API_TOKEN = os.getenv("API_TOKEN", "")
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
 MCP_TRANSPORT = "streamable-http"
@@ -46,7 +50,13 @@ def fetch_openapi_spec():
             return None
 
         logger.info(f"Successfully loaded OpenAPI spec with {len(spec.get('paths', {}))} endpoints")
-        return spec
+
+        # Patch the spec in memory to handle Python keywords before passing it to FastMCP.
+        # This is to avoid deserialization errors with Pydantic from API responses.
+        logger.info("Patching OpenAPI spec to handle conflicting keywords...")
+        patched_spec = patch_openapi_spec_for_keywords(spec)
+
+        return patched_spec
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error fetching OpenAPI spec: {e.response.status_code} - {e.response.text}")
         return None
@@ -75,11 +85,15 @@ def create_mcp_from_openapi(spec):
     try:
         # Create HTTP client with authentication
         client = httpx.AsyncClient(
-            base_url=API_BASE_URL, headers={"X-API-Key": TOKEN_API_KEY} if TOKEN_API_KEY else {}, timeout=30.0
+            base_url=API_BASE_URL, headers={"Authorization": f"Bearer: {API_TOKEN}"} if API_TOKEN else {}, timeout=30.0
         )
 
         # Generate MCP server from OpenAPI spec
         mcp = FastMCP.from_openapi(client=client, openapi_spec=spec, name="Token API MCP", version="1.0.0")
+
+        @mcp.custom_route("/health", methods=["GET"])
+        async def health_check(request: Request) -> PlainTextResponse:
+            return PlainTextResponse("OK")
 
         return mcp, client
     except Exception as e:

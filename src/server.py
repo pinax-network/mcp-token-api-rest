@@ -16,10 +16,10 @@ from starlette.responses import PlainTextResponse
 from utils import patch_openapi_spec_for_keywords
 
 # Configuration
-API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
-OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{API_BASE_URL}/openapi")
-VERSION_URL = f"{API_BASE_URL}/v1/version"
-API_TOKEN = os.getenv("API_TOKEN", "")
+TOKEN_API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
+OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{TOKEN_API_BASE_URL}/openapi")
+VERSION_URL = f"{TOKEN_API_BASE_URL}/v1/version"
+TOKEN_API_AUTH_TOKEN = os.getenv("TOKEN_API_AUTH_TOKEN", "")
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
 MCP_TRANSPORT = "streamable-http"
@@ -85,7 +85,7 @@ def create_mcp_from_openapi(spec):
     try:
         # Create HTTP client with authentication
         client = httpx.AsyncClient(
-            base_url=API_BASE_URL, headers={"Authorization": f"Bearer: {API_TOKEN}"} if API_TOKEN else {}, timeout=30.0
+            base_url=TOKEN_API_BASE_URL, headers={"Authorization": f"Bearer: {TOKEN_API_AUTH_TOKEN}"} if TOKEN_API_AUTH_TOKEN else {}, timeout=30.0
         )
 
         # Generate MCP server from OpenAPI spec
@@ -171,7 +171,7 @@ async def main():
     logger.info("Initializing Token API MCP Server...")
     OPENAPI_SPEC = fetch_openapi_spec()
     if not OPENAPI_SPEC:
-        logger.error(f"Failed to load OpenAPI spec. Make sure the Token API is running at {API_BASE_URL}")
+        logger.error(f"Failed to load OpenAPI spec. Make sure the Token API is running at {TOKEN_API_BASE_URL}")
         sys.exit(1)
 
     CURRENT_VERSION = fetch_api_version()

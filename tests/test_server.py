@@ -2,15 +2,17 @@
 """
 Tests for Token API MCP Server
 """
-import pytest
-import httpx
+
 import asyncio
-from unittest.mock import patch
-import sys
 import os
+import sys
+from unittest.mock import patch
+
+import httpx
+import pytest
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 @pytest.fixture(scope="module")
@@ -33,6 +35,7 @@ def ensure_server_initialized():
     # Cleanup
     if server_module.HTTP_CLIENT:
         import asyncio
+
         loop = asyncio.new_event_loop()
         loop.run_until_complete(server_module.HTTP_CLIENT.aclose())
         loop.close()
@@ -48,8 +51,8 @@ def mock_api_responses():
             "paths": {
                 "/v1/evm/balances": {"get": {}},
                 "/v1/svm/balances": {"get": {}},
-            }
-        }
+            },
+        },
     }
 
 
@@ -112,7 +115,7 @@ class TestServerFunctions:
     @pytest.mark.asyncio
     async def test_mcp_instance_creation(self):
         """Test that MCP instance can be created from OpenAPI spec"""
-        from src.server import fetch_openapi_spec, create_mcp_from_openapi
+        from src.server import create_mcp_from_openapi, fetch_openapi_spec
 
         spec = fetch_openapi_spec()
         if spec is None:
@@ -152,14 +155,9 @@ class TestHotReload:
         assert abs(new_endpoint_count - initial_endpoint_count) < 5
 
     @pytest.mark.asyncio
-    @patch('src.server.fetch_api_version')
-    async def test_version_change_detection(self, mock_fetch_version, ensure_server_initialized):
+    @patch("src.server.fetch_api_version")
+    async def test_version_change_detection(self, mock_fetch_version):
         """Test that version changes are detected"""
-        server_module = ensure_server_initialized
-
-        # Get current version
-        current_version = server_module.CURRENT_VERSION
-
         # Mock version change
         mock_fetch_version.return_value = "2.0.0"
 
@@ -180,7 +178,7 @@ class TestHotReload:
         original_endpoint_count = len(server_module.OPENAPI_SPEC.get("paths", {}))
 
         # Mock a temporary API failure
-        with patch('src.server.fetch_openapi_spec', return_value=None):
+        with patch("src.server.fetch_openapi_spec", return_value=None):
             success = await server_module.reload_mcp_server()
             assert success is False
 
@@ -194,7 +192,7 @@ class TestHotReload:
         from src.server import reload_mcp_server
 
         # Mock invalid spec (missing required fields)
-        with patch('src.server.fetch_openapi_spec', return_value={"invalid": "spec"}):
+        with patch("src.server.fetch_openapi_spec", return_value={"invalid": "spec"}):
             success = await reload_mcp_server()
             # Should fail to create MCP instance
             assert success is False
@@ -224,26 +222,31 @@ class TestConfiguration:
     def test_version_check_interval_default(self):
         """Test that version check interval has correct default"""
         from src.server import VERSION_CHECK_INTERVAL
+
         assert VERSION_CHECK_INTERVAL == 300  # 5 minutes default
 
     def test_version_url_uses_v1_endpoint(self):
         """Test that version URL points to /v1/version"""
-        from src.server import VERSION_URL, API_BASE_URL
+        from src.server import API_BASE_URL, VERSION_URL
+
         assert VERSION_URL == f"{API_BASE_URL}/v1/version"
 
     def test_openapi_url_configured(self):
         """Test that OpenAPI URL is correctly configured"""
-        from src.server import OPENAPI_SPEC_URL, API_BASE_URL
+        from src.server import API_BASE_URL, OPENAPI_SPEC_URL
+
         assert OPENAPI_SPEC_URL == f"{API_BASE_URL}/openapi"
 
     def test_mcp_transport_is_streamable_http(self):
         """Test that MCP transport is configured correctly"""
         from src.server import MCP_TRANSPORT
+
         assert MCP_TRANSPORT == "streamable-http"
 
     def test_api_base_url_default(self):
         """Test that API base URL has correct default"""
         from src.server import API_BASE_URL
+
         # Should be either default or from environment
         assert API_BASE_URL.startswith("http")
 

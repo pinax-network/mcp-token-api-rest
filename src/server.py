@@ -2,12 +2,14 @@
 """
 Token API MCP Server - Auto-generated from REST OpenAPI
 """
+
+import asyncio
+import logging
 import os
 import sys
-import logging
-import asyncio
-from fastmcp import FastMCP
+
 import httpx
+from fastmcp import FastMCP
 
 # Configuration
 API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
@@ -73,18 +75,11 @@ def create_mcp_from_openapi(spec):
     try:
         # Create HTTP client with authentication
         client = httpx.AsyncClient(
-            base_url=API_BASE_URL,
-            headers={"X-API-Key": TOKEN_API_KEY} if TOKEN_API_KEY else {},
-            timeout=30.0
+            base_url=API_BASE_URL, headers={"X-API-Key": TOKEN_API_KEY} if TOKEN_API_KEY else {}, timeout=30.0
         )
 
         # Generate MCP server from OpenAPI spec
-        mcp = FastMCP.from_openapi(
-            client=client,
-            openapi_spec=spec,
-            name="Token API MCP",
-            version="1.0.0"
-        )
+        mcp = FastMCP.from_openapi(client=client, openapi_spec=spec, name="Token API MCP", version="1.0.0")
 
         return mcp, client
     except Exception as e:
@@ -140,9 +135,7 @@ async def check_version_and_reload():
             new_version = fetch_api_version()
 
             if new_version and new_version != CURRENT_VERSION:
-                logger.info(
-                    f"🔄 Token API version changed: {CURRENT_VERSION} → {new_version}"
-                )
+                logger.info(f"🔄 Token API version changed: {CURRENT_VERSION} → {new_version}")
 
                 success = await reload_mcp_server()
 
@@ -178,17 +171,13 @@ async def main():
 
     logger.info(f"Starting Token API MCP server on {MCP_HOST}:{MCP_PORT}")
     logger.info(f"Version check interval: {VERSION_CHECK_INTERVAL} seconds")
-    logger.info(f"Hot-reload enabled: Server will auto-update when API changes")
+    logger.info("Hot-reload enabled: Server will auto-update when API changes")
 
     # Start background version checker
     version_check_task = asyncio.create_task(check_version_and_reload())
 
     try:
-        await MCP_INSTANCE.run_async(
-            transport=MCP_TRANSPORT,
-            host=MCP_HOST,
-            port=MCP_PORT
-        )
+        await MCP_INSTANCE.run_async(transport=MCP_TRANSPORT, host=MCP_HOST, port=MCP_PORT)
     finally:
         version_check_task.cancel()
         if HTTP_CLIENT:
@@ -197,4 +186,5 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

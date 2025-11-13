@@ -4,9 +4,13 @@ An [MCP](https://modelcontextprotocol.io) server that exposes The Graph's Token 
 
 The Token API provides blockchain data for EVM networks (Ethereum, Arbitrum, Base, etc.), Solana, and TRON, including token balances, transfers, NFT data, and DEX swaps.
 
-URL: https://token-api.thegraph.com/
-Getting started: https://thegraph.com/docs/en/token-api/quick-start/
-Repo: https://github.com/pinax-network/token-api
+The MCP client is required to interact with the MCP server:
+https://github.com/pinax-network/pinax-mcp
+
+Other useful links:
+- URL: https://token-api.thegraph.com/
+- Getting started: https://thegraph.com/docs/en/token-api/quick-start/
+- Repo: https://github.com/pinax-network/token-api
 
 ## Installation
 

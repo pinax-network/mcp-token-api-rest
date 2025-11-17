@@ -1,6 +1,6 @@
 [project]
 name = "mcp-token-api-rest"
-version = "0.1.0"
+version = "0.2.0"
 description = "REST-based MCP server for The Graph Token API"
 requires-python = ">=3.11"
 dependencies = [

@@ -7,6 +7,8 @@ Tests tool invocations and response validation using FastMCP Client
 import json
 import logging
 
+import os
+import httpx
 import pytest
 import pytest_asyncio
 from fastmcp.client import Client
@@ -22,19 +24,32 @@ pytestmark = pytest.mark.asyncio
 
 @pytest_asyncio.fixture
 async def mcp_instance():
-    from src.server import create_mcp_from_openapi, fetch_openapi_spec
+    from src.server import TOKEN_API_BASE_URL, create_mcp_from_openapi, fetch_openapi_spec
 
     """Fixture to create MCP instance for testing"""
     logger.info("Creating MCP instance for testing...")
+
+    auth_token = os.getenv("TOKEN_API_AUTH_TOKEN", None)
+    if not auth_token:
+        pytest.skip("Missing authorization token")
 
     # Fetch OpenAPI spec
     spec = fetch_openapi_spec()
     if not spec:
         pytest.skip("Failed to load OpenAPI spec.")
 
+    client = httpx.AsyncClient(
+        base_url=TOKEN_API_BASE_URL,
+        headers={"Authorization": f"Bearer {auth_token}"},
+        timeout=30.0,
+    )
+
+    if not client:
+        pytest.skip("Failed to create HTTPX client")
+
     # Create MCP instance
-    mcp, http_client = create_mcp_from_openapi(spec)
-    if not mcp or not http_client:
+    mcp = create_mcp_from_openapi(spec, client)
+    if not mcp:
         pytest.skip("Failed to create MCP instance")
 
     logger.info(f"✅ MCP instance created with {len(spec.get('paths', {}))} endpoints")
@@ -43,7 +58,7 @@ async def mcp_instance():
 
     # Cleanup
     logger.info("Closing HTTP client...")
-    await http_client.aclose()
+    await client.aclose()
 
 
 @pytest_asyncio.fixture

@@ -15,7 +15,7 @@ from key_value.aio.stores.memory import MemoryStore
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from utils import patch_openapi_spec_for_keywords
+from src.utils import patch_openapi_spec_for_keywords
 
 # Configuration
 TOKEN_API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")

@@ -10,23 +10,29 @@ import sys
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from key_value.aio.stores.memory import MemoryStore
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from utils import patch_openapi_spec_for_keywords
+from src.utils import patch_openapi_spec_for_keywords
 
 # Configuration
 TOKEN_API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
 OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{TOKEN_API_BASE_URL}/openapi")
 VERSION_URL = f"{TOKEN_API_BASE_URL}/v1/version"
-TOKEN_API_AUTH_TOKEN = os.getenv("TOKEN_API_AUTH_TOKEN", "")
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
 MCP_TRANSPORT = "streamable-http"
-VERSION_CHECK_INTERVAL = int(os.getenv("VERSION_CHECK_INTERVAL", "300"))  # 5 minutes
+VERSION_CHECK_INTERVAL = int(os.getenv("VERSION_CHECK_INTERVAL", "600"))
+ACTIVE_SESSION_TTL = int(os.getenv("ACTIVE_SESSION_TTL", "600"))
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 # Global state
@@ -34,6 +40,29 @@ CURRENT_VERSION = None
 OPENAPI_SPEC = None
 MCP_INSTANCE = None
 HTTP_CLIENT = None
+ACTIVE_SESSIONS = MemoryStore()  # Track active client sessions to notify for OpenAPI updates
+
+
+class SessionTrackingMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        if context.fastmcp_context:
+            try:
+                session_id = context.fastmcp_context.session_id
+                session = context.fastmcp_context.session
+
+                value = await ACTIVE_SESSIONS.get(session_id)
+                if value and not value.get("notified"):
+                    await session.send_tool_list_changed()
+                    logger.info("✅ Sent an update notification to an active client")
+
+                await ACTIVE_SESSIONS.put(session_id, {"notified": 1}, ttl=ACTIVE_SESSION_TTL)
+                logger.info(f"Tracking session (total: {len(await ACTIVE_SESSIONS.keys())})")
+            except Exception as e:
+                logger.error(f"Exception while tracking session: {e}")
+                pass
+
+        result = await call_next(context)
+        return result
 
 
 def fetch_openapi_spec():
@@ -52,7 +81,6 @@ def fetch_openapi_spec():
         logger.info(f"Successfully loaded OpenAPI spec with {len(spec.get('paths', {}))} endpoints")
 
         # Patch the spec in memory to handle Python keywords before passing it to FastMCP.
-        # This is to avoid deserialization errors with Pydantic from API responses.
         logger.info("Patching OpenAPI spec to handle conflicting keywords...")
         patched_spec = patch_openapi_spec_for_keywords(spec)
 
@@ -68,43 +96,39 @@ def fetch_openapi_spec():
         return None
 
 
-def fetch_api_version():
+def fetch_api_version() -> str | None:
     """Fetch current API version"""
     try:
         response = httpx.get(VERSION_URL, timeout=5.0)
         response.raise_for_status()
         version_info = response.json()
-        return version_info.get("version") or version_info.get("commit") or version_info.get("date")
+        return version_info.get("version")
     except Exception as e:
         logger.warning(f"Failed to fetch API version: {e}")
         return None
 
 
-def create_mcp_from_openapi(spec):
-    """Create MCP server from OpenAPI specification"""
+def create_mcp_from_openapi(spec, client):
+    """Create MCP server from OpenAPI specification using existing HTTP client"""
     try:
-        # Create HTTP client with authentication
-        client = httpx.AsyncClient(
-            base_url=TOKEN_API_BASE_URL, headers={"Authorization": f"Bearer: {TOKEN_API_AUTH_TOKEN}"} if TOKEN_API_AUTH_TOKEN else {}, timeout=30.0
-        )
-
-        # Generate MCP server from OpenAPI spec
         mcp = FastMCP.from_openapi(client=client, openapi_spec=spec, name="Token API MCP", version="1.0.0")
 
         @mcp.custom_route("/health", methods=["GET"])
-        async def health_check(request: Request) -> PlainTextResponse:
+        async def _(_: Request) -> PlainTextResponse:
             return PlainTextResponse("OK")
 
-        return mcp, client
+        # Add session tracking middleware
+        mcp.add_middleware(SessionTrackingMiddleware())
+
+        return mcp
     except Exception as e:
         logger.error(f"Failed to create MCP server from OpenAPI spec: {e}")
-        return None, None
+        return None
 
 
-async def reload_mcp_server():
+async def reload_mcp_server(new_version: str):
     """Reload the MCP server with updated OpenAPI spec"""
-    global OPENAPI_SPEC, MCP_INSTANCE, HTTP_CLIENT, CURRENT_VERSION
-
+    global OPENAPI_SPEC, MCP_INSTANCE, CURRENT_VERSION
     logger.info("Reloading MCP server with updated OpenAPI spec...")
 
     # Fetch new spec
@@ -113,27 +137,24 @@ async def reload_mcp_server():
         logger.error("Failed to fetch new OpenAPI spec, keeping current instance")
         return False
 
-    # Create new MCP instance
-    new_mcp, new_client = create_mcp_from_openapi(new_spec)
-    if not new_mcp:
-        logger.error("Failed to create new MCP instance, keeping current instance")
-        return False
+    if MCP_INSTANCE:
+        # Create new MCP instance using the existing HTTP client
+        new_mcp = create_mcp_from_openapi(new_spec, HTTP_CLIENT)
+        if not new_mcp:
+            logger.error("Failed to create new MCP instance, keeping current instance")
+            return False
 
-    # Close old client
-    if HTTP_CLIENT:
-        try:
-            await HTTP_CLIENT.aclose()
-        except Exception as e:
-            logger.warning(f"Error closing old HTTP client: {e}")
+        # Mark all active sessions to be notified of changes
+        sessions = await ACTIVE_SESSIONS.keys()
+        await ACTIVE_SESSIONS.put_many(sessions, [{"notified": 0}] * len(sessions))
 
-    # Update globals
-    OPENAPI_SPEC = new_spec
-    MCP_INSTANCE = new_mcp
-    HTTP_CLIENT = new_client
-    CURRENT_VERSION = fetch_api_version()
+        # Update globals
+        MCP_INSTANCE = new_mcp
+        OPENAPI_SPEC = new_spec
+        CURRENT_VERSION = new_version
 
-    logger.info(f"✅ MCP server reloaded successfully! New version: {CURRENT_VERSION}")
-    logger.info(f"   Loaded {len(OPENAPI_SPEC.get('paths', {}))} endpoints")
+        logger.info(f"✅ MCP server reloaded successfully! New version: {CURRENT_VERSION}")
+        logger.info(f"Loaded {len(OPENAPI_SPEC.get('paths', {}))} endpoints")
 
     return True
 
@@ -151,7 +172,7 @@ async def check_version_and_reload():
             if new_version and new_version != CURRENT_VERSION:
                 logger.info(f"🔄 Token API version changed: {CURRENT_VERSION} → {new_version}")
 
-                success = await reload_mcp_server()
+                success = await reload_mcp_server(new_version)
 
                 if success:
                     logger.info("MCP server hot-reloaded successfully")
@@ -177,10 +198,18 @@ async def main():
     CURRENT_VERSION = fetch_api_version()
     logger.info(f"Token API version: {CURRENT_VERSION}")
 
+    # Create persistent HTTP client
+    HTTP_CLIENT = httpx.AsyncClient(
+        base_url=TOKEN_API_BASE_URL,
+        timeout=30.0,
+    )
+    logger.info("Created persistent HTTP client")
+
     # Create initial MCP instance
-    MCP_INSTANCE, HTTP_CLIENT = create_mcp_from_openapi(OPENAPI_SPEC)
+    MCP_INSTANCE = create_mcp_from_openapi(OPENAPI_SPEC, HTTP_CLIENT)
     if not MCP_INSTANCE:
         logger.error("Failed to create initial MCP instance")
+        await HTTP_CLIENT.aclose()
         sys.exit(1)
 
     logger.info(f"Starting Token API MCP server on {MCP_HOST}:{MCP_PORT}")
@@ -196,6 +225,7 @@ async def main():
         version_check_task.cancel()
         if HTTP_CLIENT:
             await HTTP_CLIENT.aclose()
+            logger.info("HTTP client closed")
 
 
 if __name__ == "__main__":

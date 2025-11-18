@@ -19,6 +19,7 @@ from src.utils import patch_openapi_spec_for_keywords
 
 # Configuration
 TOKEN_API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
+MCP_ENDPOINT_PATH = os.getenv("MCP_ENDPOINT_PATH", "/rest")
 OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{TOKEN_API_BASE_URL}/openapi")
 VERSION_URL = f"{TOKEN_API_BASE_URL}/v1/version"
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
@@ -220,7 +221,7 @@ async def main():
     version_check_task = asyncio.create_task(check_version_and_reload())
 
     try:
-        await MCP_INSTANCE.run_async(transport=MCP_TRANSPORT, host=MCP_HOST, port=MCP_PORT)
+        await MCP_INSTANCE.run_async(transport=MCP_TRANSPORT, host=MCP_HOST, port=MCP_PORT, path=MCP_ENDPOINT_PATH)
     finally:
         version_check_task.cancel()
         if HTTP_CLIENT:

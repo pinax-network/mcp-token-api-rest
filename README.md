@@ -46,8 +46,6 @@ The server will connect to the Token API at `http://localhost:8000` by default a
 
 ```bash
 export TOKEN_API_BASE_URL=https://token-api.thegraph.com
-export TOKEN_API_AUTH_TOKEN=your-jwt-token
-export VERSION_CHECK_INTERVAL=300
 python -m src.server
 ```
 
@@ -68,15 +66,13 @@ docker run -p 8080:8080 -e TOKEN_API_BASE_URL=http://your-token-api:8000 mcp-tok
 
 Configuration is done through environment variables:
 
-`TOKEN_API_BASE_URL` sets the Token API endpoint (default: http://localhost:8000)
-
-`TOKEN_API_AUTH_TOKEN` provides authentication if required
-
-`MCP_HOST` and `MCP_PORT` control where the MCP server listens (default: 0.0.0.0:8080)
-
-`VERSION_CHECK_INTERVAL` sets how often to check for API updates in seconds (default: 300)
+- `TOKEN_API_BASE_URL` sets the Token API endpoint (default: http://localhost:8000)
+- `MCP_HOST` and `MCP_PORT` control where the MCP server listens (default: 0.0.0.0:8080)
+- `VERSION_CHECK_INTERVAL` sets how often to check for API updates in seconds (default: 300)
 
 ## Testing
+
+`TOKEN_API_AUTH_TOKEN` provides authentication if required (for tests)
 
 Run the test suite:
 

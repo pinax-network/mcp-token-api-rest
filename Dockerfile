@@ -42,8 +42,7 @@ ENV OPENAPI_SPEC_URL=${TOKEN_API_BASE_URL}/openapi
 # Hot-reload configuration (5 minutes default)
 ENV VERSION_CHECK_INTERVAL=300
 
-# Health check - removed since MCP doesn't have /health endpoint
-# Instead check if the process is running
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD pgrep -f "python.*server.py" > /dev/null || exit 1
 

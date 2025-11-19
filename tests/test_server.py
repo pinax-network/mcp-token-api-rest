@@ -6,8 +6,8 @@ Tests tool invocations and response validation using FastMCP Client
 
 import json
 import logging
-
 import os
+
 import httpx
 import pytest
 import pytest_asyncio

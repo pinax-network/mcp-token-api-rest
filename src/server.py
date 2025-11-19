@@ -7,9 +7,11 @@ import asyncio
 import logging
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from key_value.aio.stores.memory import MemoryStore
 from starlette.requests import Request
@@ -17,16 +19,24 @@ from starlette.responses import PlainTextResponse
 
 from src.utils import patch_openapi_spec_for_keywords
 
+try:
+    __version__ = version("mcp-token-api-rest")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 # Configuration
-TOKEN_API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
-MCP_ENDPOINT_PATH = os.getenv("MCP_ENDPOINT_PATH", "/rest")
-OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{TOKEN_API_BASE_URL}/openapi")
-VERSION_URL = f"{TOKEN_API_BASE_URL}/v1/version"
+ACTIVE_SESSION_TTL = int(os.getenv("ACTIVE_SESSION_TTL", "600"))
+MCP_ENDPOINT_PATH = os.getenv("MCP_ENDPOINT_PATH", "/")
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
 MCP_TRANSPORT = "streamable-http"
+MCP_VERSION = __version__
+MCP_USER_AGENT = os.getenv("MCP_USER_AGENT", f"mcp-token-api-rest/{MCP_VERSION}")
+TOKEN_API_BASE_URL = os.getenv("TOKEN_API_BASE_URL", "http://localhost:8000")
+OPENAPI_SPEC_URL = os.getenv("OPENAPI_SPEC_URL", f"{TOKEN_API_BASE_URL}/openapi")
 VERSION_CHECK_INTERVAL = int(os.getenv("VERSION_CHECK_INTERVAL", "600"))
-ACTIVE_SESSION_TTL = int(os.getenv("ACTIVE_SESSION_TTL", "600"))
+VERSION_URL = f"{TOKEN_API_BASE_URL}/v1/version"
+
 
 # Setup logging
 logging.basicConfig(
@@ -45,6 +55,19 @@ ACTIVE_SESSIONS = MemoryStore()  # Track active client sessions to notify for Op
 
 
 class SessionTrackingMiddleware(Middleware):
+    async def on_message(self, context: MiddlewareContext, call_next):
+        try:
+            request = get_http_request()
+            headers = request.headers.mutablecopy()
+            original_user_agent = headers.get("user-agent")
+            headers.update({"user-agent": f"{MCP_USER_AGENT} {original_user_agent}"})
+            request._headers = headers
+        except Exception as e:
+            logger.error(f"Could not update User-Agent for client request: {e}")
+            pass
+
+        return await call_next(context)
+
     async def on_request(self, context: MiddlewareContext, call_next):
         if context.fastmcp_context:
             try:
@@ -62,15 +85,14 @@ class SessionTrackingMiddleware(Middleware):
                 logger.error(f"Exception while tracking session: {e}")
                 pass
 
-        result = await call_next(context)
-        return result
+        return await call_next(context)
 
 
 def fetch_openapi_spec():
     """Fetch OpenAPI spec from Token API"""
     logger.info(f"Fetching OpenAPI spec from {OPENAPI_SPEC_URL}")
     try:
-        response = httpx.get(OPENAPI_SPEC_URL, timeout=10.0)
+        response = httpx.get(OPENAPI_SPEC_URL, timeout=10.0, headers={"user-agent": MCP_USER_AGENT})
         response.raise_for_status()
         spec = response.json()
 
@@ -100,7 +122,7 @@ def fetch_openapi_spec():
 def fetch_api_version() -> str | None:
     """Fetch current API version"""
     try:
-        response = httpx.get(VERSION_URL, timeout=5.0)
+        response = httpx.get(VERSION_URL, timeout=5.0, headers={"user-agent": MCP_USER_AGENT})
         response.raise_for_status()
         version_info = response.json()
         return version_info.get("version")
@@ -112,7 +134,7 @@ def fetch_api_version() -> str | None:
 def create_mcp_from_openapi(spec, client):
     """Create MCP server from OpenAPI specification using existing HTTP client"""
     try:
-        mcp = FastMCP.from_openapi(client=client, openapi_spec=spec, name="Token API MCP", version="1.0.0")
+        mcp = FastMCP.from_openapi(client=client, openapi_spec=spec, name="Token API MCP", version=MCP_VERSION)
 
         @mcp.custom_route("/health", methods=["GET"])
         async def _(_: Request) -> PlainTextResponse:
@@ -200,11 +222,8 @@ async def main():
     logger.info(f"Token API version: {CURRENT_VERSION}")
 
     # Create persistent HTTP client
-    HTTP_CLIENT = httpx.AsyncClient(
-        base_url=TOKEN_API_BASE_URL,
-        timeout=30.0,
-    )
-    logger.info("Created persistent HTTP client")
+    HTTP_CLIENT = httpx.AsyncClient(base_url=TOKEN_API_BASE_URL, timeout=30.0, headers={"user-agent": MCP_USER_AGENT})
+    logger.info(f"Created persistent HTTP client with User-Agent: {MCP_USER_AGENT}")
 
     # Create initial MCP instance
     MCP_INSTANCE = create_mcp_from_openapi(OPENAPI_SPEC, HTTP_CLIENT)

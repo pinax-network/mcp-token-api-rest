@@ -29,6 +29,9 @@ ACTIVE_SESSION_TTL = int(os.getenv("ACTIVE_SESSION_TTL", "600"))
 MCP_ENDPOINT_PATH = os.getenv("MCP_ENDPOINT_PATH", "/")
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
+# In stateful mode the MCP SDK keeps every session until the client sends DELETE, so clients that
+# never do (e.g. pollers) leak memory until the process is OOM-killed. Stateless keeps no sessions.
+MCP_STATELESS_HTTP = os.getenv("MCP_STATELESS_HTTP", "true").lower() == "true"
 MCP_TRANSPORT = "streamable-http"
 MCP_VERSION = __version__
 MCP_USER_AGENT = os.getenv("MCP_USER_AGENT", f"mcp-token-api-rest/{MCP_VERSION}")
@@ -69,7 +72,8 @@ class SessionTrackingMiddleware(Middleware):
         return await call_next(context)
 
     async def on_request(self, context: MiddlewareContext, call_next):
-        if context.fastmcp_context:
+        # Stateless requests get a throwaway session, so there is nothing to track or notify later
+        if context.fastmcp_context and not MCP_STATELESS_HTTP:
             try:
                 session_id = context.fastmcp_context.session_id
                 session = context.fastmcp_context.session
@@ -235,12 +239,19 @@ async def main():
     logger.info(f"Starting Token API MCP server on {MCP_HOST}:{MCP_PORT}")
     logger.info(f"Version check interval: {VERSION_CHECK_INTERVAL} seconds")
     logger.info("Hot-reload enabled: Server will auto-update when API changes")
+    logger.info(f"Stateless HTTP: {MCP_STATELESS_HTTP}")
 
     # Start background version checker
     version_check_task = asyncio.create_task(check_version_and_reload())
 
     try:
-        await MCP_INSTANCE.run_async(transport=MCP_TRANSPORT, host=MCP_HOST, port=MCP_PORT, path=MCP_ENDPOINT_PATH)
+        await MCP_INSTANCE.run_async(
+            transport=MCP_TRANSPORT,
+            host=MCP_HOST,
+            port=MCP_PORT,
+            path=MCP_ENDPOINT_PATH,
+            stateless_http=MCP_STATELESS_HTTP,
+        )
     finally:
         version_check_task.cancel()
         if HTTP_CLIENT:

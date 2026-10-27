@@ -69,6 +69,7 @@ Configuration is done through environment variables:
 - `TOKEN_API_BASE_URL` sets the Token API endpoint (default: http://localhost:8000)
 - `MCP_HOST` and `MCP_PORT` control where the MCP server listens (default: 0.0.0.0:8080)
 - `VERSION_CHECK_INTERVAL` sets how often to check for API updates in seconds (default: 300)
+- `MCP_STATELESS_HTTP` serves each request without a server-side session (default: true). Stateful mode keeps every session until the client sends DELETE, so clients that never do leak memory
 
 ## Testing
 

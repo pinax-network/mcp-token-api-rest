@@ -11,8 +11,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
-# Install dependencies
-RUN uv pip install --system --no-cache-dir .
+# Install dependencies pinned by uv.lock (`uv pip install .` alone ignores the lock and pulls the latest fastmcp)
+RUN uv export --frozen --no-hashes --no-emit-project -o requirements.txt && \
+    uv pip install --system --no-cache-dir -r requirements.txt .
 
 # Runtime stage
 FROM python:3.11-slim
